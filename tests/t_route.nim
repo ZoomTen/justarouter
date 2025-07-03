@@ -27,6 +27,9 @@ makeRouter("testRoute", ProbablyServerState, string):
     output = "get profile of " & pathParams["id"]
   post "/users/{id}/profile":
     output = "post profile of " & pathParams["id"]
+  get "/users/{id}/crasher":
+    let i = newStringTable({"abc": "123"})
+    discard i["def"]
   get "/users/{id}/image/{imageId}/{token}":
     output =
       "get params: [" & getParams & "], id: " & pathParams["id"] &
@@ -112,3 +115,51 @@ suite "routing":
       response ==
         "get params: [a=12&b=rjw&c=iAAAAAAAAAAAAAAAAAAAAA+], id: 133, image: 9a9a9a9a, token: 1acbde35"
     )
+  
+  test "static route with trailing slash":
+    testRoute("GET", "/about/", state, response)
+    check(response == "get /about")
+  
+  test "dynamic route with missing parameter":
+    testRoute("GET", "/users//profile", state, response)
+    check(response == "not found")
+  
+  test "dynamic route with extra segment":
+    testRoute("GET", "/users/149/profile/extra", state, response)
+    check(response == "not found")
+  
+  test "method not allowed on dynamic route":
+    testRoute("PUT", "/users/149/profile", state, response)
+    check(response == "method not allowed")
+  
+  test "exception in dynamic route":
+    testRoute("GET", "/users/149/crasher", state, response)
+    check(response == "key not found: def")
+  
+  test "only GET params, no path":
+    testRoute("GET", "?foo=bar", state, response)
+    check(response == "not found")
+  
+  test "lowercase method is not accepted":
+    testRoute("get", "/", state, response)
+    check(response == "method not allowed")
+  
+  test "case sensitivity in path":
+    testRoute("GET", "/About", state, response)
+    check(response == "not found")
+
+  test "dynamic route missing one param":
+    testRoute("GET", "/users/133/image/84752193/", state, response)
+    check(response == "not found")
+
+  test "method not allowed on static route":
+    testRoute("PATCH", "/about", state, response)
+    check(response == "method not allowed")
+
+  test "completely unknown path":
+    testRoute("GET", "/this/does/not/exist", state, response)
+    check(response == "not found")
+
+  test "GET params with special characters":
+    testRoute("GET", "/users/133/image/84752193/1acbde35?a=1%20b&b=%26", state, response)
+    check(response.contains("a=1%20b&b=%26"))
