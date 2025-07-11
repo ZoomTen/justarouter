@@ -4,7 +4,47 @@ import ../justarouter
 type ProbablyServerState = object
 
 makeRouter("testRoute", ProbablyServerState, string):
+  ##[
+  @version 1.0
+  @title My API
+  @description Something
+  @server http://127.0.0.1/api
+  @server http://example.com/api Production server
+
+  -- schema here is just plain OpenAPI schema definitions to be copied and pasted
+     into the document. I tried to have it read Nim object types but I couldn't
+     make it work so.
+  @schema OkResponse { "type": "object" }
+
+  -- similarly, security definitions are also plain OpenAPI.
+  @security ApiKeyAuth { "type": "apiKey", "in": "header", "name": "X-API-Key" }
+  @security OAuth2 { "type": "oauth2", "flows": {} }
+  ]##
   get "/":
+    ##[
+    @description Root page, something something something.
+    @summary Root page
+    @tag Main
+    @parameter roomId (path): integer required "Something something something"
+    @produces application/json
+    @security ApiKeyAuth []
+    @response 200
+    @response 400
+    @response 404
+    ]##
+    output = "get /"
+  get "/api/":
+    ##[
+    @description Root page, something something something.
+    @summary Root page
+    @tag API
+    @parameter roomId (path): integer required "Something something something"
+    @response 200 (OkResponse) "Request completed"
+    @response 400
+    @response 404
+    @produces application/json
+    @security OAuth2 ["read", "write"]
+    ]##
     output = "get /"
   head "/":
     output = "head /"

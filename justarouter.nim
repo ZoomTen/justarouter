@@ -141,7 +141,9 @@ runnableExamples:
     get "/users/{id}/profile":
       let num = pathParams["id"].parseInt()
       if num == 10:
-        let name = params.db.pretendExec("SELECT name FROM user WHERE id = 10")
+        let name = params.db.pretendExec(
+          "SELECT name FROM user WHERE id = 10"
+        )
         output = "Name: " & name
       else:
         output = "Invalid user!"
@@ -154,7 +156,7 @@ runnableExamples:
     exceptionHandler:
       debugEcho "oops! " & e.repr
       output = "Something went wrong"
-  
+
   let state = ServerState()
   var reply = ""
 
@@ -178,8 +180,6 @@ runnableExamples:
 
   route("GET", "/jdoiwdjfoiergj", state, reply)
   assert reply == "Not found..."
-      
-      
 
 import std/macros
 import std/tables
@@ -194,6 +194,10 @@ export strutils
 import regex
 export regex
 
+when defined(routerGenerateSwagger):
+  import std/json
+  import std/options
+
 type RouterHttpMethods = enum
   Get = "GET"
   Head = "HEAD"
@@ -202,6 +206,27 @@ type RouterHttpMethods = enum
   Delete = "DELETE"
   Options = "OPTIONS"
   Patch = "PATCH"
+
+when defined(routerGenerateSwagger):
+  proc parseSwaggerDocComment(
+      doc: string
+  ): Option[Table[string, seq[string]]] =
+    var s = doc.strip()
+    if (len(s) < 1) or (len(s) > 0 and s[0] != '@'):
+      return none(Table[string, seq[string]])
+    var k = initTable[string, seq[string]]()
+    for line in splitLines(s):
+      var i = line.strip()
+      if (len(i) < 1) or (len(i) > 0 and i[0] != '@'):
+        continue
+      var paramArgs = i.split(' ', maxsplit = 1)
+      if len(paramArgs) < 2:
+        continue
+      let paramName = paramArgs[0][1 ..^ 1].toLowerAscii()
+      if not k.hasKey(paramName):
+        k[paramName] = newSeq[string]()
+      k[paramName].add(paramArgs[1])
+    return some(k)
 
 macro makeRouter*(
     name: string, paramType, outputType, body: untyped
@@ -218,6 +243,17 @@ macro makeRouter*(
   var defaultRoutine = newEmptyNode()
   var methodNotAllowedRoutine = newEmptyNode()
   var exceptionHandlerRoutine = newEmptyNode()
+
+  when defined(routerGenerateSwagger):
+    var api =
+      %*{
+        "openapi": "3.0.0",
+        "info": {},
+        "servers": [],
+        "paths": {},
+        "components": {"securitySchemes": {}, "schemas": {}},
+      }
+    var schemaDefs: seq[string] = @[]
 
   #[
     Perform AST analysis
@@ -273,6 +309,232 @@ macro makeRouter*(
           staticRoutes[url] = @[routeEntry]
         else:
           staticRoutes[url].add(routeEntry)
+      when defined(routerGenerateSwagger):
+        if (
+          len(methodBody) > 0 and
+          methodBody[0].kind == nnkCommentStmt
+        ):
+          let parsedDocResult =
+            methodBody[0].strVal.parseSwaggerDocComment()
+          if parsedDocResult.isSome():
+            let parsedDoc = parsedDocResult.get()
+            if not api["paths"].hasKey(url):
+              api["paths"][url] = %*{}
+            let mtdNameLower = ($methodName).toLowerAscii()
+            api["paths"][url][mtdNameLower] = %*{}
+            var produceType = ""
+            for k, v in pairs(parsedDoc):
+              case k
+              of "tag":
+                if not api["paths"][url][mtdNameLower].hasKey(
+                  "tags"
+                ):
+                  api["paths"][url][mtdNameLower]["tags"] = %*[]
+                for tagDef in v:
+                  api["paths"][url][mtdNameLower]["tags"].add(
+                    tagDef.newJString()
+                  )
+              of "produces":
+                for prodDef in v:
+                  produceType = prodDef
+              of "security":
+                if not api["paths"][url][mtdNameLower].hasKey(
+                  "security"
+                ):
+                  api["paths"][url][mtdNameLower]["security"] =
+                    %*[]
+                for securityDef in v:
+                  let n = securityDef.split(' ', maxsplit = 1)
+                  let securityDefName = n[0]
+                  let securityDefContent = n[1].parseJson()
+                  api["paths"][url][mtdNameLower]["security"].add(
+                    %*{securityDefName: securityDefContent}
+                  )
+              of "parameter":
+                if not api["paths"][url][mtdNameLower].hasKey(
+                  "parameters"
+                ):
+                  api["paths"][url][mtdNameLower]["parameters"] =
+                    %*[]
+                for paramDef in v:
+                  #[
+                  Accepts the following:
+                  - paramName (location): type required "description"
+                  - paramName (location): type "description"
+                  - paramName (location): "description"
+                  
+                  For the last one, the type is implicitly taken to be a string.
+                  The type is something that is either a basic JSON type or
+                  something referenced in the route @schema types, where the
+                  latter takes preference.
+                  ]#
+                  var m = RegexMatch2()
+                  let txt = paramDef
+                  if regex.match(
+                    txt,
+                    re2"""(?x)
+                    ^
+                      (?P<paramName>\w+)
+                      \s+
+                      \( (?P<location>\w+) \)
+                      : \s+
+                      (?:
+                        (?P<type>\w+)
+                        (?:\s+(?P<requiredFlag>required))?
+                        \s+
+                      )?
+                      "(?P<description>.+?)"
+                    $""",
+                    m,
+                  ):
+                    var newParam =
+                      %*{
+                        "name": txt[m.group("paramName")],
+                        "in": txt[m.group("location")],
+                        "description":
+                          txt[m.group("description")],
+                      }
+                    newParam["required"] = (
+                      m.group("requiredFlag").a > -1
+                    ).newJBool()
+                    newParam["schema"] = block:
+                      let typeName =
+                        if m.group("type").a > -1:
+                          txt[m.group("type")]
+                        else:
+                          "string"
+                      if typeName in schemaDefs:
+                        %*{
+                          "$ref":
+                            "#/components/schemas/" & typeName
+                        }
+                      else:
+                        %*{"type": typeName}
+
+                    api["paths"][url][mtdNameLower][
+                      "parameters"
+                    ].add(newParam)
+              of "response":
+                if not api["paths"][url][mtdNameLower].hasKey(
+                  "responses"
+                ):
+                  api["paths"][url][mtdNameLower]["responses"] =
+                    %*{}
+                for respDef in v:
+                  #[
+                  Accepts the following:
+                  - 200 (TypeName) "description"
+                  - 200 "description, can also have spaces"
+                  - 200 (TypeName)
+                  - 200
+
+                  TypeName should be something that is defined
+                  in the @schema of the containing router.
+                  ]#
+                  var m = RegexMatch2()
+                  let txt = respDef
+                  var respCode = ""
+                  if regex.match(
+                    txt,
+                    re2"""(?x)
+                  ^
+                    (?P<respCode>\d+)
+                    (?:\s+
+                      (?:
+                        \( (?P<respType>\w+) \) |
+                        (?P<respDescription1>".+?")
+                      )
+                    )?
+                    (?:\s+
+                      (?P<respDescription2>".+?")
+                    )?
+                  $""",
+                    m,
+                  ):
+                    block addRespCode:
+                      let i = m.group("respCode")
+                      if i.a < 0:
+                        break addRespCode
+                      else:
+                        respCode = txt[i]
+
+                        api["paths"][url][mtdNameLower][
+                          "responses"
+                        ][respCode] = %*{}
+
+                    block addRespType:
+                      let i = m.group("respType")
+                      if i.a < 0:
+                        break addRespType
+                      else:
+                        let typeName = txt[i]
+                        #[
+                        Create schema out of Nim types... well, if I could
+                        in the first place.
+                        
+                        Can't link to symbols outside this macro???  :(
+                        ]#
+                        when false:
+                          if not api["components"]["schemas"].hasKey(
+                            typeName
+                          ):
+                            api["components"]["schemas"][
+                              typeName
+                            ] =
+                              %*{
+                                "type": "object",
+                                "properties": %*{},
+                              }
+                            let objSym =
+                              bindSym(typeName, brForceOpen)
+                            let objImpl = objSym.getImpl()
+                            let objFields = objImpl[2][2]
+                            for identDef in objFields:
+                              let name = identDef[0].strVal()
+                              let propType = identDef[1]
+                              let jsonSafePropType =
+                                propType.strVal()
+
+                              api["components"]["schemas"][
+                                typeName
+                              ]["properties"][name] =
+                                %*{
+                                  "type": jsonSafePropType.newJString()
+                                }
+
+                        # Then link to the schema in the response definition
+
+                        api["paths"][url][mtdNameLower][
+                          "responses"
+                        ][respCode]["content"] =
+                          %*{
+                            produceType: {
+                              "schema": {
+                                "$ref": (
+                                  "#/components/schemas/" &
+                                  typeName
+                                ).newJString()
+                              }
+                            }
+                          }
+
+                    block addRespDesc:
+                      let i = block:
+                        let i = m.group("respDescription1")
+                        if i.a < 0:
+                          m.group("respDescription2")
+                        else:
+                          i
+                      if i.a < 0:
+                        break addRespDesc
+                      else:
+                        api["paths"][url][mtdNameLower][
+                          "responses"
+                        ][respCode]["description"] =
+                          txt[i.a + 1 .. i.b - 1].newJString()
+              else:
+                api["paths"][url][mtdNameLower][k] =
+                  v[0].newJString()
     #[
       Statements of the form:
         default:
@@ -292,8 +554,61 @@ macro makeRouter*(
         methodNotAllowedRoutine = methodBody
       of "exceptionHandler":
         exceptionHandlerRoutine = methodBody
+    of nnkCommentStmt:
+      when defined(routerGenerateSwagger):
+        let parsedDocResult =
+          node.strVal.parseSwaggerDocComment()
+        if parsedDocResult.isSome():
+          let parsedDoc = parsedDocResult.get()
+          for k, v in pairs(parsedDoc):
+            case k
+            of "server":
+              #[
+              Accepts:
+                - @url http://127.0.0.1 Test server
+                - @url http://127.0.0.1
+              ]#
+              for serverDef in v:
+                let n = serverDef.split(' ', maxsplit = 1)
+                case len(n)
+                of 1:
+                  api["servers"].add(%*{"url": n[0]})
+                of 2:
+                  api["servers"].add(
+                    %*{"url": n[0], "description": n[1]}
+                  )
+                else:
+                  discard
+            of "security":
+              for securityDef in v:
+                let n = securityDef.split(' ', maxsplit = 1)
+                let securityDefName = n[0]
+                let securityDefContent = n[1].parseJson()
+
+                api["components"]["securitySchemes"][
+                  securityDefName
+                ] = securityDefContent
+            of "schema":
+              for schemaDef in v:
+                let n = schemaDef.split(' ', maxsplit = 1)
+                let typeName = n[0]
+                let typeContent = n[1].parseJson()
+                api["components"]["schemas"][typeName] =
+                  typeContent
+                schemaDefs.add(typeName)
+            else:
+              api["info"][k] = v[0].newJString()
+      else:
+        discard
     else:
       discard
+
+  when defined(routerGenerateSwagger):
+    when defined(routerGenerateSwaggerStdout):
+      debugEcho api.pretty()
+    else:
+      # Output generated OpenAPI spec to a file
+      writeFile("router_" & name.strval & ".json", api.pretty())
 
   when defined(routerMacroDbg):
     debugEcho "============= STATIC ROUTES ============="
@@ -840,7 +1155,6 @@ macro makeRouter*(
   when defined(routerMacroDbg):
     debugEcho "======BUILT========="
     debugEcho builtProc.repr
-
   #[
     At last, we now have our generated proc.
   ]#
