@@ -381,19 +381,21 @@ macro makeRouter*(
                                 }
 
                         # Then link to the schema in the response definition
+                        let respSchema =
+                          if typeName in schemaDefs:
+                            %*{
+                              "$ref":
+                                "#/components/schemas/" &
+                                typeName
+                            }
+                          else:
+                            %*{"type": typeName}
 
                         api["paths"][url][mtdNameLower][
                           "responses"
                         ][respCode]["content"] =
                           %*{
-                            produceType: {
-                              "schema": {
-                                "$ref": (
-                                  "#/components/schemas/" &
-                                  typeName
-                                ).newJString()
-                              }
-                            }
+                            produceType: {"schema": respSchema}
                           }
 
                     block addRespDesc:

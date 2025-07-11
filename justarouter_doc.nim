@@ -257,13 +257,14 @@ These tags are defined underneath the endpoint definition (i.e. `get "/":`) also
 ```
 @response <HTTP code>
 @response <HTTP code> "<Description>"
-@response <HTTP code> (<Schema>)
-@response <HTTP code> (<Schema>) "<Description>"
+@response <HTTP code> (<Type>)
+@response <HTTP code> (<Type>) "<Description>"
 ```
 - Maps to `.paths.*.*.responses`.
 - Multiple of these can be specified, in any form.
 - HTTP code and schema may NOT have spaces.
-- Schema MUST be something that is defined as a `@schema` in the General API information.
+- Type can either be a primitive type (integer, string, etc.), or something that is defined as a `@schema` in the General API information.
+- Type follows the same rules as `@parameter`.
 
 ```
 @security <Security scheme name> <JSON array>

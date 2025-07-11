@@ -47,6 +47,10 @@ makeRouter("testRoute", ProbablyServerState, string):
     ]##
     output = "get /"
   head "/":
+    ##[
+    @produces text/html
+    @response 200 (string) "OK"
+    ]##
     output = "head /"
   post "/":
     output = "post /"
