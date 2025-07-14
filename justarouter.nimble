@@ -1,5 +1,6 @@
 version = "0.1.0"
 author = "Zumi"
+description = "Just a simple HTTP router generator."
 license = "MIT"
 skipDirs = @["bench", "tests"]
 installFiles = @["justarouter.nim"]
