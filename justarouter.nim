@@ -392,6 +392,7 @@ runnableExamples:
 import std/macros
 import std/tables
 import std/genasts
+import std/httpcore
 
 import std/strtabs
 export strtabs
@@ -802,13 +803,13 @@ macro makeRouter*(
                           m.group("respDescription2")
                         else:
                           i
-                      if i.a < 0:
-                        break addRespDesc
-                      else:
-                        api["paths"][url][mtdNameLower][
-                          "responses"
-                        ][respCode]["description"] =
+                      let finalRespDesc = if i.a < 0:
+                          ($HttpCode(parseInt(respCode))).newJString()
+                        else:
                           txt[i.a + 1 .. i.b - 1].newJString()
+
+                      api["paths"][url][mtdNameLower]["responses"][respCode]["description"] = finalRespDesc
+                          
               else:
                 api["paths"][url][mtdNameLower][k] =
                   v[0].newJString()
