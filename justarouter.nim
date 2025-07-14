@@ -309,7 +309,7 @@ See section "Generating OpenAPI specs".
 
 ### routerGenerateSwaggerStdout
 
-See section "Generating OpenAPI specs".
+See section "Generating OpenAPI specs". This define should appear **in addition to** `routerGenerateSwagger`.
 
 ### routerMacroDbg
 
