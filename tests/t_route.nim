@@ -14,7 +14,7 @@ makeRouter("testRoute", ProbablyServerState, string):
   -- schema here is just plain OpenAPI schema definitions to be copied and pasted
      into the document. I tried to have it read Nim object types but I couldn't
      make it work so.
-  @schema OkResponse { "type": "object" }
+  @schema OkResponse { "type": "object", "description": "A sample response.", "properties": {"message": {"type": "string", "description": "Just a message"} }, "example": {"message": "Limiting things to a single line will not cause pain at all!!!!!!!!" } }
 
   -- similarly, security definitions are also plain OpenAPI.
   @security ApiKeyAuth { "type": "apiKey", "in": "header", "name": "X-API-Key" }
@@ -53,8 +53,18 @@ makeRouter("testRoute", ProbablyServerState, string):
     ]##
     output = "head /"
   post "/":
+    ##[
+    @produces text/html
+    @consumes application/json
+    @body OkResponse "something"
+    @response 200 (string) "OK"
+    ]##
     output = "post /"
   put "/":
+    ##[
+    @consumes application/x-www-form-urlencoded
+    @body OkResponse required "something"
+    ]##
     output = "put /"
   delete "/":
     output = "delete /"

@@ -249,10 +249,38 @@ These tags are defined underneath the endpoint definition (i.e. `get "/":`) also
 - If the Type is left out, then the parameter will be implicitly taken as a `string`.
 
 ```
+@body <Type> required "<Description>"
+@body <Type> "<Description>"
+@body "<Description>" 
+```
+- Maps to `.paths.*.*.requestBody`.
+- Type may NOT have spaces.
+- Type can either be a primitive type (integer, string, etc.), or something that is defined as a `@schema` in the General API information.
+- If there is a `@schema` with the name of `integer`, then that will take priority.
+- If the Type is left out, then the parameter will be implicitly taken as a `string`.
+- There can only be one of these, any @body definition after the first one will be ignored.
+
+```
 @produces <MIME type>
 ```
 - Maps to `.paths.*.*.content.<MIME type>`.
 - It's named after the `produces` section of Swagger 2.x.
+- There can only be one of these, only the last @produces definition will be used.
+
+.. tip::
+  - If it returns JSON, put in `application/json`.
+  - If it returns an HTML document or a fragment, put in `text/html`.
+
+```
+@consumes <MIME type>
+```
+- Maps to `.paths.*.*.requestBody.content.<MIME type>`.
+- It's named after the `consumes` section of Swagger 2.x.
+- There can only be one of these, only the last @consumes definition will be used.
+
+.. tip::
+  - If it's an HTML form, put in `application/x-www-form-urlencoded`.
+  - If it's an HTML form containing files, put in `multipart/form-data`.
 
 ```
 @response <HTTP code>
@@ -500,6 +528,7 @@ macro makeRouter*(
             let mtdNameLower = ($methodName).toLowerAscii()
             api["paths"][url][mtdNameLower] = %*{}
             var produceType = ""
+            var consumeType = ""
             for k, v in pairs(parsedDoc):
               case k
               of "tag":
@@ -514,6 +543,9 @@ macro makeRouter*(
               of "produces":
                 for prodDef in v:
                   produceType = prodDef
+              of "consumes":
+                for consDef in v:
+                  consumeType = consDef
               of "security":
                 if not api["paths"][url][mtdNameLower].hasKey(
                   "security"
@@ -591,6 +623,69 @@ macro makeRouter*(
                     api["paths"][url][mtdNameLower][
                       "parameters"
                     ].add(newParam)
+              of "body":
+                if not api["paths"][url][mtdNameLower].hasKey(
+                  "requestBody"
+                ):
+                  api["paths"][url][mtdNameLower]["requestBody"] = %*{"content": {consumeType: {}}}
+                for bodyDef in v:
+                  #[
+                  Accepts the following:
+                  - TypeName required "description"
+                  - TypeName "description"
+                  - "description"
+
+                  TypeName should be something that is defined
+                  in the @schema of the containing router.
+                  ]#
+                  var m = RegexMatch2()
+                  let txt = bodyDef
+                  var description = ""
+                  if regex.match(
+                    txt,
+                    re2"""(?x)
+                    ^
+                      (?:
+                        (?P<bodyType>\w+)
+                        \s+
+
+                        (?:
+                          (?P<requiredFlag>required)
+                          \s+
+                        )?
+                      )?
+                      "
+                      (?P<bodyDescription>.+?)
+                      "
+                    $
+                    """,
+                    m
+                  ):
+                    block insertDescription:
+                      let i = m.group("bodyDescription")
+                      if i.a < 0:
+                        break insertDescription
+                      api["paths"][url][mtdNameLower]["requestBody"]["description"] = txt[i].newJString()
+                    block determineRequired:
+                      let i = m.group("requiredFlag")
+                      if i.a < 0:
+                        break determineRequired
+                      api["paths"][url][mtdNameLower]["requestBody"]["required"] = true.newJBool()
+                    block determineBodyType:
+                      let i = m.group("bodyType")
+                      if i.a < 0:
+                        break determineBodyType
+                      else:
+                        let typeName = txt[i]
+                        api["paths"][url][mtdNameLower]["requestBody"]["content"][consumeType]["schema"] = if typeName in schemaDefs:
+                            %*{
+                              "$ref":
+                                "#/components/schemas/" &
+                                typeName
+                            }
+                          else:
+                            %*{"type": typeName}
+                  break # limit to single body only
               of "response":
                 if not api["paths"][url][mtdNameLower].hasKey(
                   "responses"
