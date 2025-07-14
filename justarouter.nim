@@ -247,6 +247,8 @@ These tags are defined underneath the endpoint definition (i.e. `get "/":`) also
 - Type can either be a primitive type (integer, string, etc.), or something that is defined as a `@schema` in the General API information.
 - If there is a `@schema` with the name of `integer`, then that will take priority. Not sure what you need this info for, but thought I'd let you know of this parse quirk.
 - If the Type is left out, then the parameter will be implicitly taken as a `string`.
+- Yes, the spacing arrangement is exactly like that.
+- Yes, `required` is lower-case.
 
 ```
 @body <Type> required "<Description>"
@@ -259,6 +261,7 @@ These tags are defined underneath the endpoint definition (i.e. `get "/":`) also
 - If there is a `@schema` with the name of `integer`, then that will take priority.
 - If the Type is left out, then the parameter will be implicitly taken as a `string`.
 - There can only be one of these, any @body definition after the first one will be ignored.
+- Yes, `required` is lower-case.
 
 ```
 @produces <MIME type>
