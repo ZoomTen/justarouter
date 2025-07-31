@@ -114,13 +114,13 @@ makeRouter("test2"):
 ### Variables injected at endpoint code
 
 On every route, the following variables are made available to you:
-- `reqType`: From proc call.
-- `path`: From proc call.
-- `params`: From proc call.
-- `output`: From proc call, if macro is invoked with a non-void output type.
-- `pathOnly`: The URL part of the `path`.
-- `pathParams`: Any variables captured in the dynamic route.
-- `getParams`: The parameter part of the `path`.
+- `reqType`: (string) From proc call.
+- `path`: (string) From proc call.
+- `params`: (T) From proc call.
+- `output`: (U) From proc call, if macro is invoked with a non-void output type.
+- `pathOnly`: (string) The URL part of the `path`.
+- `pathParams`: (StringTableRef) Any variables captured in the dynamic route.
+- `getParams`: (string) The parameter part of the `path`.
 - `e`: Captured exception -- **only on the `exceptionHandler` route!**
 
 When you set `path` to `/test/abc?id=10&def=qwerty`:
